@@ -1,0 +1,12 @@
+label,type
+sync_tap,event
+shake_hands,event
+sit_down,event
+stand_up,event
+jump,event
+stumble,event
+walking,activity
+stairs_up,activity
+stairs_down,activity
+sitting,activity
+

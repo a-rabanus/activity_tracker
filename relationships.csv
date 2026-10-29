@@ -1,0 +1,3 @@
+event,action,activity
+sit_down,start,sitting
+stand_up,stop,sitting
