@@ -16,7 +16,6 @@ A small tkinter tool for labelling human-activity recordings while the subject w
 ```bash
 uv run --python 3.14 python -m activity_timestamps                              # asks for links, start time + subject
 uv run --python 3.14 python -m activity_timestamps --start 12:55 --subject S01  # skips the start-time dialog
-uv run --python 3.14 --with pytest python -m pytest tests -q
 ```
 
 You need a Python with tkinter. uv-managed Pythons include it. For the system Python, install `python3-tk`.
