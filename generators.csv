@@ -14,6 +14,8 @@ jumping_jacks,activity
 squats,activity
 wash_hands,activity
 walking,activity
+running,activity
+laying,activity
 stairs_up,activity
 stairs_down,activity
 sitting,activity
