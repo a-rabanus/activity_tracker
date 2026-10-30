@@ -39,11 +39,18 @@ def ask_session_info(root: tk.Tk, default_subject: str, default_start: str | Non
     error_var = tk.StringVar()
     result: list[tuple[datetime, str]] = []
 
-    ttk.Label(frame, text="Sensor start (HH:MM[:SS])").grid(row=0, column=0, sticky="w")
+    ttk.Label(frame, text="""
+                  Enter timestamp for measurement start
+                  Enter session and subject ID.  (The subject ID is used to name the output files)
+                  """
+                  ).grid(
+            row=0, column=0, columnspan=4, sticky="w"
+        )
+    ttk.Label(frame, text="Sensor start (HH:MM[:SS])").grid(row=1, column=0, sticky="w")
     start_entry = ttk.Entry(frame, textvariable=start_var, width=20)
-    start_entry.grid(row=0, column=1, pady=2)
-    ttk.Label(frame, text="Subject ID").grid(row=1, column=0, sticky="w")
-    ttk.Entry(frame, textvariable=subject_var, width=20).grid(row=1, column=1, pady=2)
+    start_entry.grid(row=1, column=1, pady=2)
+    ttk.Label(frame, text="Subject ID").grid(row=2, column=0, sticky="w")
+    ttk.Entry(frame, textvariable=subject_var, width=20).grid(row=2, column=1, pady=2)
     ttk.Label(frame, textvariable=error_var, foreground="red").grid(row=2, column=0, columnspan=2)
 
     def ok(*_):
@@ -85,7 +92,13 @@ def edit_relationships(
     dialog.resizable(False, False)
     frame = ttk.Frame(dialog, padding=12)
     frame.pack()
-    ttk.Label(frame, text="When an event is logged, start or stop an activity automatically.").grid(
+    ttk.Label(frame, text="""
+              OPTIONAL: link events to activities for more convenient logging.
+              Press 'Continue' to move on and save the links for future sessions.
+              
+              When an event is logged, start or stop an activity automatically.
+              """
+              ).grid(
         row=0, column=0, columnspan=4, sticky="w"
     )
 
@@ -173,6 +186,7 @@ class App:
 
         header = ttk.Frame(root, padding=8)
         header.pack(fill="x")
+        
         ttk.Label(
             header, text=f"Subject: {self.session.subject}    Sensor start: {self.session.reference:%Y-%m-%d %H:%M:%S}"
         ).pack(side="left")
