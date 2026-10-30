@@ -4,9 +4,16 @@ shake_hands,event
 sit_down,event
 stand_up,event
 jump,event
+jumping_jacks,activity
+squats,activity
+throw_ball,event
+catch_ball,event
+open_door,event
+close_door,event
+wash_hands,activity
 stumble,event
 walking,activity
 stairs_up,activity
 stairs_down,activity
 sitting,activity
-
+bike_riding,activity
