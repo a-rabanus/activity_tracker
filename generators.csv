@@ -3,21 +3,16 @@ sync_tap,event
 shake_hands,event
 sit_down,event
 stand_up,event
-jump,event
-throw_ball,event
-catch_ball,event
-open_door,event
-close_door,event
-stumble,event
+drinking,event
 
 jumping_jacks,activity
 squats,activity
 wash_hands,activity
 walking,activity
 running,activity
-laying,activity
 stairs_up,activity
 stairs_down,activity
 sitting,activity
-bike_riding,activity
-
+throw_ball,activity
+catch_ball,activity
+open_door,activity
