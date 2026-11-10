@@ -1,9 +1,6 @@
 label,type
 sync_tap,event
-shake_hands,event
-sit_down,event
-stand_up,event
-drinking,event
+
 
 jumping_jacks,activity
 squats,activity
