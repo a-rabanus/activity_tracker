@@ -16,3 +16,7 @@ sitting,activity
 throw_ball,activity
 catch_ball,activity
 open_door,activity
+shake_hands,activity
+sit_down,activity
+stand_up,activity
+drinking,activity
