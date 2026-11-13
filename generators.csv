@@ -1,5 +1,5 @@
 label,type
-sync_tap,event
+sync_flip,event
 sit_down,event
 stand_up,event
 
