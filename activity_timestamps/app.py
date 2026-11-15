@@ -9,6 +9,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from .generator import Label
+from .naming import SCENARIOS, build_trial_id, is_taken, next_free_trial, parse_number
 from .recorder import Press, Recorder
 from .relationships import ACTIONS, Relationship, load_relationships, save_relationships
 from .storage import parse_reference
@@ -35,54 +36,109 @@ def _run_modal(root: tk.Tk, dialog: tk.Toplevel) -> None:
     root.wait_window(dialog)
 
 
-def ask_session_info(root: tk.Tk, default_subject: str, default_start: str | None) -> tuple[datetime, str] | None:
-    """Modal dialog for sensor start time and subject ID. Returns None if cancelled."""
+def ask_session_info(
+    root: tk.Tk,
+    out_dir: Path,
+    day: date,
+    person: int | None = None,
+    scenario: str = SCENARIOS[0],
+    trial: int | None = None,
+    default_start: str | None = None,
+) -> tuple[datetime, str, int] | None:
+    """Modal dialog for person ID, scenario, trial number and sensor start time.
+
+    Returns (reference, trial_id, person), or None if cancelled.
+    """
     dialog = tk.Toplevel(root)
-    dialog.title("New session")
+    dialog.title("Neue Aufnahme")
     dialog.resizable(False, False)
     frame = ttk.Frame(dialog, padding=12)
     frame.pack()
 
+    person_var = tk.StringVar(value=f"{person:02d}" if person else "")
+    scenario_var = tk.StringVar(value=scenario if scenario in SCENARIOS else SCENARIOS[0])
+    trial_var = tk.StringVar(value=f"{trial:02d}" if trial else "01")
     start_var = tk.StringVar(value=default_start or datetime.now().strftime("%H:%M:%S"))
-    subject_var = tk.StringVar(value=default_subject)
+    preview_var = tk.StringVar()
     error_var = tk.StringVar()
-    result: list[tuple[datetime, str]] = []
+    result: list[tuple[datetime, str, int]] = []
 
-    ttk.Label(frame, text="""
-                  Enter timestamp for measurement start
-                  Enter session and subject ID.  (The subject ID is used to name the output files)
-                  """
-                  ).grid(
-            row=0, column=0, columnspan=4, sticky="w"
-        )
-    ttk.Label(frame, text="Sensor start (HH:MM[:SS])").grid(row=1, column=0, sticky="w")
-    start_entry = ttk.Entry(frame, textvariable=start_var, width=20)
-    start_entry.grid(row=1, column=1, pady=2)
-    ttk.Label(frame, text="Subject ID").grid(row=2, column=0, sticky="w")
-    ttk.Entry(frame, textvariable=subject_var, width=20).grid(row=2, column=1, pady=2)
-    ttk.Label(frame, textvariable=error_var, foreground="red").grid(row=2, column=0, columnspan=2)
+    ttk.Label(frame, text=f"Datum: {day:%Y%m%d} (automatisch)").grid(row=0, column=0, columnspan=2, sticky="w")
+    ttk.Label(frame, text="Personen-ID (1-99)").grid(row=1, column=0, sticky="w")
+    person_entry = ttk.Entry(frame, textvariable=person_var, width=22)
+    person_entry.grid(row=1, column=1, pady=2)
+    ttk.Label(frame, text="Szenario").grid(row=2, column=0, sticky="w")
+    ttk.Combobox(frame, textvariable=scenario_var, values=SCENARIOS, state="readonly", width=20).grid(
+        row=2, column=1, pady=2
+    )
+    ttk.Label(frame, text="Trial-Nummer (1-99)").grid(row=3, column=0, sticky="w")
+    ttk.Entry(frame, textvariable=trial_var, width=22).grid(row=3, column=1, pady=2)
+    ttk.Label(frame, text="Sensor-Start (HH:MM[:SS])").grid(row=4, column=0, sticky="w")
+    ttk.Entry(frame, textvariable=start_var, width=22).grid(row=4, column=1, pady=2)
+    ttk.Label(frame, textvariable=preview_var, font=("TkFixedFont", 12, "bold")).grid(
+        row=5, column=0, columnspan=2, sticky="w", pady=(8, 0)
+    )
+    ttk.Label(frame, textvariable=error_var, foreground="red", wraplength=420).grid(
+        row=6, column=0, columnspan=2, sticky="w"
+    )
+
+    def current() -> tuple[str, int, int]:
+        p = parse_number(person_var.get(), "P", "Personen-ID")
+        t = parse_number(trial_var.get(), "T", "Trial-Nummer")
+        return build_trial_id(day, p, scenario_var.get(), t), p, t
+
+    def update_preview(*_):
+        try:
+            trial_id, _, _ = current()
+        except ValueError:
+            preview_var.set("Trial-ID: -")
+            return
+        taken = "  (existiert bereits)" if is_taken(out_dir, trial_id) else ""
+        preview_var.set(f"Trial-ID: {trial_id}{taken}")
+
+    def check_free(trial_id: str, p: int, t: int) -> bool:
+        """If the files exist, suggest the next free trial number. True if the ID is free."""
+        if not is_taken(out_dir, trial_id):
+            return True
+        suggestion = next_free_trial(out_dir, day, p, scenario_var.get(), after=t)
+        if suggestion is None:
+            error_var.set(f"{trial_id} existiert bereits und es gibt keine freie Trial-Nummer mehr.")
+        else:
+            trial_var.set(f"{suggestion:02d}")
+            error_var.set(
+                f"{trial_id} existiert bereits in {out_dir}. Nächste freie Trial-Nummer T{suggestion:02d} "
+                "wurde eingetragen. Bitte prüfen und erneut 'Start' klicken."
+            )
+        return False
 
     def ok(*_):
-        subject = subject_var.get().strip()
-        if not subject:
-            error_var.set("subject ID is required")
-            return
         try:
+            trial_id, p, t = current()
             reference = parse_reference(start_var.get(), date.today())
         except ValueError as e:
             error_var.set(str(e))
             return
-        result.append((reference, subject))
+        if not check_free(trial_id, p, t):
+            return
+        result.append((reference, trial_id, p))
         dialog.destroy()
 
+    for var in (person_var, scenario_var, trial_var):
+        var.trace_add("write", update_preview)
+
     buttons = ttk.Frame(frame)
-    buttons.grid(row=3, column=0, columnspan=2, pady=(8, 0))
+    buttons.grid(row=7, column=0, columnspan=2, pady=(8, 0))
     ttk.Button(buttons, text="Start", command=ok).pack(side="left", padx=4)
-    ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="left", padx=4)
+    ttk.Button(buttons, text="Abbrechen", command=dialog.destroy).pack(side="left", padx=4)
     dialog.bind("<Return>", ok)
     dialog.bind("<Escape>", lambda _: dialog.destroy())
 
-    start_entry.focus_set()
+    update_preview()
+    try:
+        check_free(*current())  # warn straight away if the prefilled ID (e.g. from --trial) is taken
+    except ValueError:
+        pass
+    person_entry.focus_set()
     _run_modal(root, dialog)
     return result[0] if result else None
 
@@ -306,13 +362,14 @@ class App:
         self.history: list[Press] = []  # oldest first
         self.buttons: dict[str, tk.Button] = {}
 
-        root.title(f"Activity timestamps - {self.session.subject}")
+        root.title(f"Activity timestamps - {self.session.trial_id}")
 
         header = ttk.Frame(root, padding=8)
         header.pack(fill="x")
-        
+
         ttk.Label(
-            header, text=f"Subject: {self.session.subject}    Sensor start: {self.session.reference:%Y-%m-%d %H:%M:%S}"
+            header,
+            text=f"Trial: {self.session.trial_id}    Sensor start: {self.session.reference:%Y-%m-%d %H:%M:%S}",
         ).pack(side="left")
         self.clock_var = tk.StringVar()
         ttk.Label(header, textvariable=self.clock_var, font=("TkFixedFont", 16)).pack(side="right")

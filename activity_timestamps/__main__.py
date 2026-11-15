@@ -1,13 +1,13 @@
-"""Entry point: python -m activity_timestamps [--start 12:55] [--subject S01]"""
+"""Entry point: python -m activity_timestamps [--start 12:55] [--trial 20261113_P01_EVT-scenario01_T01]"""
 
 import argparse
-import re
 import tkinter as tk
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from .app import App, ask_session_info, choose_relationships
 from .generator import load_generator
+from .naming import SCENARIOS, is_taken, output_paths, parse_trial_id, subject_id
 from .recorder import Recorder
 from .storage import Session, parse_reference
 
@@ -17,7 +17,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--generator", type=Path, default=Path("generators.csv"), help="label,type csv")
     parser.add_argument("--relationships", type=Path, help="event,action,activity csv (default: next to generator)")
     parser.add_argument("--start", help="sensor recording start, HH:MM[:SS] or ISO datetime")
-    parser.add_argument("--subject", help="subject ID, used in output file names")
+    parser.add_argument("--trial", help="trial ID YYYYMMDD_Pxx_EVT-scenarioXX_Txx, e.g. 20261113_P01_EVT-scenario01_T01")
     parser.add_argument("--out-dir", type=Path, default=Path("data"))
     args = parser.parse_args(argv)
 
@@ -26,6 +26,12 @@ def main(argv: list[str] | None = None) -> None:
     if args.start:
         try:
             reference = parse_reference(args.start, date.today())
+        except ValueError as e:
+            parser.error(str(e))
+    day, person, scenario, trial = date.today(), None, SCENARIOS[0], None
+    if args.trial:
+        try:
+            day, person, scenario, trial = parse_trial_id(args.trial)
         except ValueError as e:
             parser.error(str(e))
 
@@ -37,23 +43,23 @@ def main(argv: list[str] | None = None) -> None:
     if relationships is None:
         root.destroy()
         return
-    if reference and args.subject:
-        subject = args.subject
+    if reference and args.trial and not is_taken(args.out_dir, args.trial):
+        trial_id = args.trial
     else:
-        info = ask_session_info(root, args.subject or "S01", args.start)
+        info = ask_session_info(root, args.out_dir, day, person, scenario, trial, args.start)
         if info is None:
             root.destroy()
             return
-        reference, subject = info
+        reference, trial_id, person = info
     root.deiconify()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    safe_subject = re.sub(r"\W+", "_", subject)
-    stem = args.out_dir / f"{safe_subject}_{datetime.now():%Y%m%d_%H%M%S}"
+    csv_path, db_path = output_paths(args.out_dir, trial_id)
     session = Session(
-        stem.with_suffix(".sqlite"), labels, reference, subject, args.generator, relationships=relationships
+        db_path, labels, reference, subject_id(person), args.generator,
+        relationships=relationships, trial_id=trial_id,
     )
-    App(root, Recorder(session, relationships), labels, stem.with_suffix(".csv"))
+    App(root, Recorder(session, relationships), labels, csv_path)
     root.mainloop()
 
 

@@ -11,6 +11,7 @@ from .relationships import Relationship
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS session (
+    trial_id       TEXT NOT NULL,
     subject        TEXT NOT NULL,
     reference_time TEXT NOT NULL,
     generator_path TEXT,
@@ -35,7 +36,7 @@ CREATE TABLE IF NOT EXISTS relationships (
 );
 """
 
-CSV_COLUMNS = ["subject", "label", "type", "start_s", "end_s", "duration_s", "start_time", "end_time"]
+CSV_COLUMNS = ["trial_id", "subject", "label", "type", "start_s", "end_s", "duration_s", "start_time", "end_time"]
 
 
 def parse_reference(text: str, today: date) -> datetime:
@@ -62,9 +63,11 @@ class Session:
         generator_path: str | Path | None = None,
         relationships: Sequence[Relationship] = (),
         clock: Callable[[], datetime] = datetime.now,
+        trial_id: str = "",
     ):
         self.reference = reference
         self.subject = subject
+        self.trial_id = trial_id
         self.clock = clock
         self.types = {l.label: l.type for l in labels}
 
@@ -76,8 +79,9 @@ class Session:
             [(l.label, l.type) for l in labels],
         )
         self.db.execute(
-            "INSERT INTO session VALUES (?, ?, ?, ?)",
-            (subject, reference.isoformat(), str(generator_path or ""), clock().isoformat()),
+            "INSERT INTO session (trial_id, subject, reference_time, generator_path, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (trial_id, subject, reference.isoformat(), str(generator_path or ""), clock().isoformat()),
         )
         self.db.executemany(
             "INSERT INTO relationships (event, action, activity) VALUES (?, ?, ?)",
@@ -148,6 +152,7 @@ class Session:
         out = []
         for label, kind, start_s, end_s, start_time, end_time in cur:
             out.append({
+                "trial_id": self.trial_id,
                 "subject": self.subject,
                 "label": label,
                 "type": kind,
