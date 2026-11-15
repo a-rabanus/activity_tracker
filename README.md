@@ -34,11 +34,29 @@ as well and the trial ID is not used yet, the dialog is skipped.
 
 `YYYYMMDD_Pxx_EVT-scenarioXX_Txx`, e.g. `20261113_P01_EVT-scenario01_T01`
 
-- `YYYYMMDD` date, `Pxx` person ID, `EVT` fixed, `scenarioXX` from `SCENARIOS` in
-  `activity_timestamps/naming.py` (add new scenarios there), `Txx` trial number.
+- `YYYYMMDD` date, `Pxx` person ID, `EVT` fixed, `scenarioXX` one of the files in `scenarios/`,
+  `Txx` trial number.
 - Files: `data/<Trial-ID>_labels.csv` and `data/<Trial-ID>_labels.sqlite`.
 - Existing files are never overwritten. If the trial ID is already used, the next free trial number is filled
   in and you confirm with *Start* again.
+
+## Scenarios
+
+`scenarios/scenarioXX.csv` (`step,label,hint`) lists the steps of a scenario in order. `label` is a label from
+`generators.csv` or `sync` (the guided sync sequence below), `hint` is a short text such as `ca. 30 s`.
+To add a scenario, just add a new `scenarioXX.csv` there. The start dialog lists the folder (or `--scenarios DIR`).
+A file that names an unknown label is rejected in the dialog with the line number.
+
+During the recording the scenario panel shows `Schritt X/Y: <label> – <hint>` and `Als Nächstes: ...`, and the
+button of the current step is green (`>>> label <<<`).
+
+- A step is done when its event is clicked, when its activity is stopped (also by a linked event), or for
+  `sync` when the sync sequence is finished. The next step is then shown automatically.
+- *Schritt überspringen* moves on and records the skip in the log and in the `skipped_steps` table of the
+  `.sqlite` (not in the CSV). *Schritt zurück* goes back one step and removes the skip mark of that step.
+- All buttons stay clickable. Clicking a label the current step doesn't expect is logged as usual and shows a
+  short red notice.
+- *Undo last* on the press that completed a step also moves the scenario back to that step.
 
 ## Sync procedure
 

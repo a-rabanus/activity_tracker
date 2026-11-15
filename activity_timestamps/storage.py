@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS relationships (
     action   TEXT NOT NULL CHECK (action IN ('start', 'stop')),
     activity TEXT NOT NULL REFERENCES labels (label)
 );
+CREATE TABLE IF NOT EXISTS skipped_steps (
+    id       INTEGER PRIMARY KEY,
+    scenario TEXT NOT NULL,
+    step     INTEGER NOT NULL,
+    label    TEXT NOT NULL,
+    time     TEXT NOT NULL,
+    t_s      REAL NOT NULL
+);
 """
 
 CSV_COLUMNS = ["trial_id", "subject", "label", "type", "start_s", "end_s", "duration_s", "start_time", "end_time"]
@@ -142,6 +150,23 @@ class Session:
         return self.db.execute(
             "SELECT label, start_s, end_s FROM annotations WHERE id = ?", (annotation_id,)
         ).fetchone()
+
+    def log_skipped(self, scenario: str, step: int, label: str) -> int:
+        now = self.clock()
+        cur = self.db.execute(
+            "INSERT INTO skipped_steps (scenario, step, label, time, t_s) VALUES (?, ?, ?, ?, ?)",
+            (scenario, step, label, now.isoformat(), self._rel(now)),
+        )
+        self.db.commit()
+        return cur.lastrowid
+
+    def delete_skipped(self, skipped_id: int) -> None:
+        self.db.execute("DELETE FROM skipped_steps WHERE id = ?", (skipped_id,))
+        self.db.commit()
+
+    def skipped(self) -> list[tuple[float, int, str]]:
+        """(t_s, step, label) of skipped scenario steps."""
+        return self.db.execute("SELECT t_s, step, label FROM skipped_steps ORDER BY t_s, id").fetchall()
 
     def rows(self) -> list[dict]:
         cur = self.db.execute(

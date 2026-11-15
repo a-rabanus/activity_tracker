@@ -5,7 +5,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 EXPERIMENT = "EVT"
-SCENARIOS = ("scenario01", "scenario02")  # add new scenarios here
+SCENARIO_RE = re.compile(r"scenario\d{2}", re.ASCII)  # available scenarios = scenarios/scenarioXX.csv
 TRIAL_ID_RE = re.compile(r"(\d{8})_P(\d{2})_" + EXPERIMENT + r"-(scenario\d{2})_T(\d{2})", re.ASCII)
 MAX_NUMBER = 99
 
@@ -21,8 +21,8 @@ def parse_number(text: str, prefix: str, what: str) -> int:
 
 
 def build_trial_id(day: date, person: int, scenario: str, trial: int) -> str:
-    if scenario not in SCENARIOS:
-        raise ValueError(f"Unbekanntes Szenario {scenario!r}, erlaubt: {', '.join(SCENARIOS)}")
+    if not SCENARIO_RE.fullmatch(scenario):
+        raise ValueError(f"Ungültiges Szenario {scenario!r}, Format: scenarioXX (z. B. scenario01)")
     for value, what in ((person, "Personen-ID"), (trial, "Trial-Nummer")):
         if not 1 <= value <= MAX_NUMBER:
             raise ValueError(f"{what} muss zwischen 1 und {MAX_NUMBER} liegen")
@@ -42,7 +42,7 @@ def parse_trial_id(text: str) -> tuple[date, int, str, int]:
         day = datetime.strptime(day_s, "%Y%m%d").date()
     except ValueError:
         raise ValueError(f"Ungültiges Datum {day_s!r} in Trial-ID {text!r}") from None
-    build_trial_id(day, int(person), scenario, int(trial))  # range and scenario checks
+    build_trial_id(day, int(person), scenario, int(trial))  # range checks
     return day, int(person), scenario, int(trial)
 
 

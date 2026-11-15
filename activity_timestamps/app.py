@@ -22,13 +22,16 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from .generator import Label
-from .naming import SCENARIOS, build_trial_id, is_taken, next_free_trial, parse_number
+from .naming import build_trial_id, is_taken, next_free_trial, parse_number
 from .recorder import Press, Recorder
 from .relationships import ACTIONS, Relationship, load_relationships, save_relationships
+from .scenario import SYNC, ScenarioProgress, Step, list_scenarios, load_scenario
 from .storage import parse_reference
 
 RUNNING_BG = "#d9534f"
 FLIP_BG = "#f0ad4e"
+CURRENT_BG = "#5cb85c"  # button of the current scenario step
+NOTICE_MS = 4000  # how long the "unexpected label" notice stays
 
 SYNC_REST_S = 20  # seconds the sensor box lies still before each flip
 SYNC_FLIP = "sync_flip"  # first flip: z positive -> z negative
@@ -53,15 +56,19 @@ def ask_session_info(
     root: tk.Tk,
     out_dir: Path,
     day: date,
+    scenario_dir: Path,
+    labels: list[Label],
     person: int | None = None,
-    scenario: str = SCENARIOS[0],
+    scenario: str | None = None,
     trial: int | None = None,
     default_start: str | None = None,
-) -> tuple[datetime, str, int] | None:
+) -> tuple[datetime, str, int, ScenarioProgress] | None:
     """Modal dialog for person ID, scenario, trial number and sensor start time.
 
-    Returns (reference, trial_id, person), or None if cancelled.
+    The scenario dropdown lists scenario_dir/scenarioXX.csv. Returns
+    (reference, trial_id, person, scenario progress), or None if cancelled.
     """
+    scenarios = list_scenarios(scenario_dir)
     dialog = tk.Toplevel(root)
     dialog.title("Neue Aufnahme")
     dialog.resizable(False, False)
@@ -69,7 +76,7 @@ def ask_session_info(
     frame.pack()
 
     person_var = tk.StringVar(value=f"{person:02d}" if person else "")
-    scenario_var = tk.StringVar(value=scenario if scenario in SCENARIOS else SCENARIOS[0])
+    scenario_var = tk.StringVar(value=scenario if scenario in scenarios else (scenarios or [""])[0])
     trial_var = tk.StringVar(value=f"{trial:02d}" if trial else "01")
     start_var = tk.StringVar(value=default_start or datetime.now().strftime("%H:%M:%S"))
     preview_var = tk.StringVar()
@@ -81,7 +88,7 @@ def ask_session_info(
     person_entry = ttk.Entry(frame, textvariable=person_var, width=22)
     person_entry.grid(row=1, column=1, pady=2)
     ttk.Label(frame, text="Szenario").grid(row=2, column=0, sticky="w")
-    ttk.Combobox(frame, textvariable=scenario_var, values=SCENARIOS, state="readonly", width=20).grid(
+    ttk.Combobox(frame, textvariable=scenario_var, values=scenarios, state="readonly", width=20).grid(
         row=2, column=1, pady=2
     )
     ttk.Label(frame, text="Trial-Nummer (1-99)").grid(row=3, column=0, sticky="w")
@@ -125,15 +132,20 @@ def ask_session_info(
         return False
 
     def ok(*_):
+        if not scenarios:
+            error_var.set(f"Keine Szenarien gefunden: {scenario_dir}/scenarioXX.csv anlegen.")
+            return
         try:
             trial_id, p, t = current()
             reference = parse_reference(start_var.get(), date.today())
-        except ValueError as e:
+            name = scenario_var.get()
+            steps = load_scenario(scenario_dir / f"{name}.csv", labels)
+        except (ValueError, OSError) as e:
             error_var.set(str(e))
             return
         if not check_free(trial_id, p, t):
             return
-        result.append((reference, trial_id, p))
+        result.append((reference, trial_id, p, ScenarioProgress(name, steps)))
         dialog.destroy()
 
     for var in (person_var, scenario_var, trial_var):
@@ -291,8 +303,9 @@ class SyncPanel:
         self.step = "idle"
         self.deadline = 0.0
         self.after_id: str | None = None
+        self.is_current = False  # sync is the current scenario step
 
-        frame = ttk.LabelFrame(parent, text="Sync", padding=8)
+        frame = self.frame = ttk.LabelFrame(parent, text="Sync", padding=8)
         frame.pack(fill="x", padx=8, pady=(0, 8))
         self.instruction_var = tk.StringVar()
         self.countdown_var = tk.StringVar()
@@ -310,7 +323,6 @@ class SyncPanel:
         self.cancel_button.pack(side="left", padx=(8, 0), ipady=8)
         self._show("idle")
         if not enabled:
-            self.action.config(state="disabled")
             self.instruction_var.set(
                 f"Sync nicht verfügbar: '{SYNC_FLIP}' und '{SYNC_FLIP_BACK}' müssen in generators.csv als event stehen."
             )
@@ -319,16 +331,27 @@ class SyncPanel:
     def active(self) -> bool:
         return self.step not in ("idle", "done")
 
+    def set_current(self, is_current: bool) -> None:
+        """Highlight the panel while sync is the current scenario step."""
+        if is_current == self.is_current:
+            return
+        self.is_current = is_current
+        self.frame.config(text="Sync   <<< aktueller Schritt" if is_current else "Sync")
+        if self.enabled and not self.active:
+            self._show(self.step, self.note)
+
     def _show(self, step: str, note: str = "") -> None:
         self.step = step
+        self.note = note
         instruction, action_text, _ = self.STEPS[step]
         self.instruction_var.set(f"{note}\n{instruction}" if note else instruction)
         flip = step in ("flip", "flip_back")
+        bg = FLIP_BG if flip else CURRENT_BG if self.is_current and not self.active else self.default_bg
         self.action.config(
             text=action_text or "Bitte warten ...",
-            state="normal" if action_text else "disabled",
-            bg=FLIP_BG if flip else self.default_bg,
-            activebackground=FLIP_BG if flip else self.default_bg,
+            state="normal" if action_text and self.enabled else "disabled",
+            bg=bg,
+            activebackground=bg,
         )
         self.cancel_button.config(state="normal" if self.active else "disabled")
         if step not in ("rest1", "rest2"):
@@ -367,13 +390,24 @@ class SyncPanel:
 
 
 class App:
-    def __init__(self, root: tk.Tk, recorder: Recorder, labels: list[Label], csv_path: Path):
+    def __init__(
+        self,
+        root: tk.Tk,
+        recorder: Recorder,
+        labels: list[Label],
+        csv_path: Path,
+        progress: ScenarioProgress | None = None,
+    ):
         self.root = root
         self.recorder = recorder
         self.session = recorder.session
         self.csv_path = csv_path
-        self.history: list[Press] = []  # oldest first
+        self.progress = progress
+        # oldest first: (press, scenario step index before the press if the press completed that step)
+        self.history: list[tuple[Press, int | None]] = []
+        self.skipped_ids: dict[int, int] = {}  # step index -> skipped_steps row id
         self.buttons: dict[str, tk.Button] = {}
+        self.notice_after: str | None = None
 
         root.title(f"Activity timestamps - {self.session.trial_id}")
 
@@ -389,6 +423,26 @@ class App:
         if recorder.relationships:
             links = "Links: " + ", ".join(str(r) for r in recorder.relationships)
             ttk.Label(root, text=links, padding=(8, 0, 8, 8), wraplength=600).pack(fill="x")
+
+        self.step_var = tk.StringVar()
+        self.upcoming_var = tk.StringVar()
+        self.notice_var = tk.StringVar()
+        if progress:
+            panel = ttk.LabelFrame(root, text=f"Szenario: {progress.name}", padding=8)
+            panel.pack(fill="x", padx=8, pady=(0, 8))
+            tk.Label(
+                panel, textvariable=self.step_var, font=("TkDefaultFont", 18, "bold"), fg="#1d6b1d", anchor="w"
+            ).pack(fill="x")
+            tk.Label(panel, textvariable=self.upcoming_var, font=("TkDefaultFont", 12), anchor="w").pack(fill="x")
+            tk.Label(
+                panel, textvariable=self.notice_var, font=("TkDefaultFont", 11, "bold"), fg="#c9302c", anchor="w"
+            ).pack(fill="x")
+            nav = ttk.Frame(panel)
+            nav.pack(fill="x", pady=(4, 0))
+            self.back_button = ttk.Button(nav, text="Schritt zurück", command=self.on_step_back)
+            self.back_button.pack(side="left")
+            self.skip_button = ttk.Button(nav, text="Schritt überspringen", command=self.on_skip)
+            self.skip_button.pack(side="left", padx=4)
 
         sync_ok = all(self.session.types.get(l) == "event" for l in SYNC_LABELS)
         self.sync = SyncPanel(root, root, self.on_press, enabled=sync_ok)
@@ -409,7 +463,6 @@ class App:
             btn.pack(fill="x", pady=2, ipady=6)
             self.buttons[l.label] = btn
         self.default_bg = next(iter(self.buttons.values())).cget("bg") if self.buttons else None
-        self.activity_labels = [l.label for l in labels if l.type == "activity"]
 
         self.log = tk.Listbox(root, height=10, font="TkFixedFont")
         self.log.pack(fill="both", expand=True, padx=8, pady=8)
@@ -422,6 +475,7 @@ class App:
         ttk.Label(footer, textvariable=self.status_var).pack(side="left", padx=8)
 
         root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self._refresh()
         self._tick()
 
     def _tick(self):
@@ -429,39 +483,112 @@ class App:
         self.root.after(200, self._tick)
 
     def _refresh(self):
-        for label in self.activity_labels:
+        step = self.progress.current if self.progress else None
+        current_label = step.label if step else None
+        for label, button in self.buttons.items():
             running = label in self.recorder.running
-            self.buttons[label].config(
-                text=f"[stop] {label}" if running else label,
-                bg=RUNNING_BG if running else self.default_bg,
-                activebackground=RUNNING_BG if running else self.default_bg,
-            )
-        self.log.delete(0, "end")
-        for row in reversed(self.session.rows()):
+            current = label == current_label
+            bg = RUNNING_BG if running else CURRENT_BG if current else self.default_bg
+            text = f"[stop] {label}" if running else label
+            button.config(text=f">>> {text} <<<" if current else text, bg=bg, activebackground=bg)
+        self.sync.set_current(current_label == SYNC)
+        if self.progress:
+            self._refresh_scenario()
+
+        entries: list[tuple[float, str]] = []
+        for row in self.session.rows():
             if row["type"] == "event":
                 when = fmt_offset(row["start_s"])
             else:
                 end = fmt_offset(row["end_s"]) if row["end_s"] is not None else "running"
                 when = f"{fmt_offset(row['start_s'])} -> {end}"
-            self.log.insert("end", f"{when:<28} {row['label']}")
+            entries.append((row["start_s"], f"{when:<28} {row['label']}"))
+        for t_s, number, label in self.session.skipped():
+            entries.append((t_s, f"{fmt_offset(t_s):<28} [übersprungen] Schritt {number}: {label}"))
+        self.log.delete(0, "end")
+        for _, text in sorted(entries, key=lambda e: e[0], reverse=True):
+            self.log.insert("end", text)
+
+    def _refresh_scenario(self):
+        p = self.progress
+        total = len(p.steps)
+        if p.finished:
+            self.step_var.set(f"Szenario abgeschlossen ({total}/{total} Schritte)")
+            self.upcoming_var.set("")
+        else:
+            self.step_var.set(f"Schritt {p.index + 1}/{total}: {p.current}")
+            self.upcoming_var.set(f"Als Nächstes: {p.upcoming}" if p.upcoming else "Als Nächstes: Ende des Szenarios")
+        self.skip_button.config(state="disabled" if p.finished else "normal")
+        self.back_button.config(state="normal" if p.index > 0 else "disabled")
+
+    def _notice(self, text: str) -> None:
+        self.notice_var.set(text)
+        if self.notice_after is not None:
+            self.root.after_cancel(self.notice_after)
+        self.notice_after = self.root.after(NOTICE_MS, lambda: self.notice_var.set(""))
+
+    def _step_result(self, step: Step, label: str, was_running: bool) -> tuple[bool, bool]:
+        """(expected, done): did the press concern the current step, and did it complete it?"""
+        if step.label == SYNC:
+            return label in SYNC_LABELS, label == SYNC_FLIP_BACK
+        if self.session.types[step.label] == "event":
+            return label == step.label, label == step.label
+        changed = was_running != (step.label in self.recorder.running)  # also via a linked event
+        return label == step.label or changed, was_running and step.label not in self.recorder.running
 
     def on_press(self, label: str):
-        self.history.append(self.recorder.press(label))
+        step = self.progress.current if self.progress else None
+        was_running = step is not None and step.label in self.recorder.running
+        press = self.recorder.press(label)
+        completed = None
+        if step is not None:
+            expected, done = self._step_result(step, label, was_running)
+            if done:
+                completed = self.progress.index
+                self.progress.advance()
+            if not expected:
+                self._notice(f"Hinweis: '{label}' geloggt, erwartet war Schritt {self.progress.index + 1}: {step}")
+        self.history.append((press, completed))
         self._refresh()
+
+    def _rewind(self, index: int) -> None:
+        """Make `index` the current step again. Skip marks from there on are removed."""
+        for i in [i for i in self.skipped_ids if i >= index]:
+            self.session.delete_skipped(self.skipped_ids.pop(i))
+        self.progress.index = index
+
+    def on_skip(self):
+        step = self.progress.current
+        if step is None:
+            return
+        if step.label == SYNC and self.sync.active:
+            self.sync.cancel("Sync abgebrochen, weil der Schritt übersprungen wurde.")
+        self.skipped_ids[self.progress.index] = self.session.log_skipped(self.progress.name, step.number, step.label)
+        self.progress.advance()
+        self._refresh()
+
+    def on_step_back(self):
+        if self.progress.index > 0:
+            self._rewind(self.progress.index - 1)
+            self._refresh()
 
     def on_undo(self):
         if not self.history:
             return
-        press = self.history[-1]
+        press, completed = self.history[-1]
         message = f"Undo the last press ({press.label})?"
         if len(press.created) + len(press.stopped) > 1:
             message += "\nLinked activity starts/stops are undone too."
+        if completed is not None:
+            message += f"\nDas Szenario geht zurück auf Schritt {completed + 1}."
         if not messagebox.askyesno("Undo", message, parent=self.root):
             return
         self.history.pop()
         self.recorder.undo(press)
         if press.label in SYNC_LABELS and self.sync.active:
             self.sync.cancel(f"Sync abgebrochen, weil '{press.label}' rückgängig gemacht wurde. Bitte neu starten.")
+        if completed is not None:
+            self._rewind(completed)
         self._refresh()
 
     def on_export(self):
