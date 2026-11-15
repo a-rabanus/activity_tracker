@@ -15,7 +15,7 @@ A small tkinter tool for labelling human-activity recordings while the subject w
 
 ```bash
 uv run --python 3.14 python -m activity_timestamps                    # asks for links, then the start dialog
-uv run --python 3.14 python -m activity_timestamps --start 11:27:49     --trial 20261115_P03_S01                                          # skips the start dialog
+uv run --python 3.14 python -m activity_timestamps --start 11:27:49     --trial 20261115_P03_S01_SC02                                     # skips the start dialog
 python -m unittest discover -s tests                                  # tests for the trial ID
 ```
 
@@ -27,11 +27,11 @@ The sensor script prints the two values to enter here:
 
 ```
 Sensor-Start: 11:27:49        ->  field "Sensor-Start (HH:MM:SS)"
-Trial-ID: 20261115_P03_S01    ->  person ID + scenario, the tracker builds the same ID
+Trial-ID: 20261115_P03_S01_SC02  ->  person ID + session + scenario, the tracker builds the same ID
 ```
 
-The dialog asks for the **person ID** (`3`, `03` or `P03`), the **scenario** (dropdown) and the **sensor start
-time**. The date is today's date. The trial ID is shown live; check that it is exactly the one from the sensor
+The dialog asks for the **person ID** (`3`, `03` or `P03`), the **session** (`1`, `01` or `S01`), the
+**scenario** (dropdown) and the **sensor start time**. The date is today's date. The trial ID is shown live; check that it is exactly the one from the sensor
 script. Invalid input shows a message in red and the dialog stays open. The person ID (e.g. `P03`) is stored as
 `subject`.
 
@@ -40,21 +40,21 @@ as well, the dialog is skipped.
 
 ## Trial ID and file names
 
-`YYYYMMDD_Pxx_Sxx`, e.g. `20261115_P03_S01`. It must be identical to the sensor recording.
+`YYYYMMDD_Pxx_Sxx_SCxx`, e.g. `20261115_P03_S01_SC02`. It must be identical to the sensor recording.
 
-- `YYYYMMDD` date of the recording, `Pxx` person ID `P01`-`P99`, `Sxx` scenario from `SCENARIOS` in
-  `activity_timestamps/naming.py` (`["S01", "S02"]`, must stay identical to the sensor repo).
+- `YYYYMMDD` date of the recording, `Pxx` person ID `P01`-`P99`, `Sxx` session `S01`-`S99`, `SCxx` scenario
+  from `SCENARIOS` in `activity_timestamps/naming.py` (`["SC01", "SC02"]`, must stay identical to the sensor repo).
 - All IDs are made and checked in `naming.py` (`build_trial_id`, `parse_trial_id`).
 - Files: `data/<Trial-ID>_labels.csv` and `data/<Trial-ID>_labels.sqlite`
   (sensor files: `<Trial-ID>_<position>_<acc|gyro>.csv`).
-- There is exactly one recording per day, person and scenario. If files for the trial ID already exist,
+- There is exactly one recording per day, person, session and scenario. If files for the trial ID already exist,
   nothing is overwritten: the dialog shows a message and does not start, `--trial` stops with an error.
 
 ## Scenarios
 
-`scenarios/Sxx.csv` (`step,label,hint`) lists the steps of a scenario in order. `label` is a label from
+`scenarios/SCxx.csv` (`step,label,hint`) lists the steps of a scenario in order. `label` is a label from
 `generators.csv` or `sync` (the guided sync sequence below), `hint` is a short text such as `ca. 30 s`.
-To add a scenario, add it to `SCENARIOS` (and in the sensor repo) and add `scenarios/Sxx.csv`. The dropdown
+To add a scenario, add it to `SCENARIOS` (and in the sensor repo) and add `scenarios/SCxx.csv`. The dropdown
 lists the scenarios that have a file (folder: `scenarios/` or `--scenarios DIR`).
 A file that names an unknown label is rejected in the dialog with the line number.
 
