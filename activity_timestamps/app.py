@@ -1,5 +1,18 @@
 """Tkinter window for the operator: one button per event, one toggle per activity."""
 
+if __name__ == "__main__" and not __package__:
+    # Started directly (e.g. "Run Python File" on app.py): run the package like `python -m activity_timestamps`.
+    import os
+    import runpy
+    import sys
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(project_root))
+    os.chdir(project_root)  # generators.csv, relationships.csv and data/ live here
+    runpy.run_module("activity_timestamps", run_name="__main__", alter_sys=True)
+    sys.exit()
+
 import math
 import time
 import tkinter as tk
