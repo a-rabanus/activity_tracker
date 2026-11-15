@@ -1,8 +1,8 @@
 label,type
 sync_flip,event
+sync_flip_back,event
 sit_down,event
 stand_up,event
-
 
 
 jumping_jacks,activity

@@ -1,6 +1,9 @@
 """Tkinter window for the operator: one button per event, one toggle per activity."""
 
+import math
+import time
 import tkinter as tk
+from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -11,6 +14,12 @@ from .relationships import ACTIONS, Relationship, load_relationships, save_relat
 from .storage import parse_reference
 
 RUNNING_BG = "#d9534f"
+FLIP_BG = "#f0ad4e"
+
+SYNC_REST_S = 20  # seconds the sensor box lies still before each flip
+SYNC_FLIP = "sync_flip"  # first flip: z positive -> z negative
+SYNC_FLIP_BACK = "sync_flip_back"  # second flip: z negative -> z positive
+SYNC_LABELS = (SYNC_FLIP, SYNC_FLIP_BACK)
 
 
 def fmt_offset(seconds: float) -> str:
@@ -173,6 +182,121 @@ def choose_relationships(root: tk.Tk, labels: list[Label], path: Path) -> list[R
     return edit_relationships(root, labels, initial, path)
 
 
+class SyncPanel:
+    """Guided sync: rest, flip, rest, flip back, then keep the sensors moving.
+
+    The rests are timed; the flips are logged only when the operator clicks, so the
+    timestamp is the moment of the flip.
+    """
+
+    # step -> (instruction, action button text or None if disabled, next step after the countdown)
+    STEPS = {
+        "idle": (
+            "Sensoren in die Box legen, z-Achse nach oben (z positiv). Dann 'Sync starten' klicken.",
+            "Sync starten",
+            None,
+        ),
+        "rest1": (f"1/4  Ruhe {SYNC_REST_S} s: Box ruhig liegen lassen (z positiv)", None, "flip"),
+        "flip": (
+            "2/4  Jetzt flippen (z positiv -> z negativ). Im Moment des Flips klicken!",
+            f"FLIP jetzt  ({SYNC_FLIP})",
+            None,
+        ),
+        "rest2": (f"3/4  Ruhe {SYNC_REST_S} s: Box ruhig liegen lassen (z negativ)", None, "flip_back"),
+        "flip_back": (
+            "4/4  Jetzt zurück flippen (z negativ -> z positiv). Im Moment des Flips klicken!",
+            f"ZURÜCK-FLIP jetzt  ({SYNC_FLIP_BACK})",
+            None,
+        ),
+        "done": (
+            "Sync fertig. Sensoren entnehmen und ständig in Bewegung halten.",
+            "Sync starten",
+            None,
+        ),
+    }
+
+    def __init__(self, parent: tk.Misc, root: tk.Tk, on_flip: Callable[[str], None], enabled: bool):
+        self.root = root
+        self.on_flip = on_flip
+        self.enabled = enabled
+        self.step = "idle"
+        self.deadline = 0.0
+        self.after_id: str | None = None
+
+        frame = ttk.LabelFrame(parent, text="Sync", padding=8)
+        frame.pack(fill="x", padx=8, pady=(0, 8))
+        self.instruction_var = tk.StringVar()
+        self.countdown_var = tk.StringVar()
+        tk.Label(
+            frame, textvariable=self.instruction_var, font=("TkDefaultFont", 14, "bold"),
+            wraplength=640, justify="left", anchor="w",
+        ).pack(fill="x")
+        tk.Label(frame, textvariable=self.countdown_var, font=("TkFixedFont", 40, "bold")).pack()
+        buttons = ttk.Frame(frame)
+        buttons.pack(fill="x")
+        self.action = tk.Button(buttons, command=self._on_action, font=("TkDefaultFont", 12, "bold"))
+        self.action.pack(side="left", fill="x", expand=True, ipady=8)
+        self.default_bg = self.action.cget("bg")
+        self.cancel_button = tk.Button(buttons, text="Sync abbrechen", command=self.cancel)
+        self.cancel_button.pack(side="left", padx=(8, 0), ipady=8)
+        self._show("idle")
+        if not enabled:
+            self.action.config(state="disabled")
+            self.instruction_var.set(
+                f"Sync nicht verfügbar: '{SYNC_FLIP}' und '{SYNC_FLIP_BACK}' müssen in generators.csv als event stehen."
+            )
+
+    @property
+    def active(self) -> bool:
+        return self.step not in ("idle", "done")
+
+    def _show(self, step: str, note: str = "") -> None:
+        self.step = step
+        instruction, action_text, _ = self.STEPS[step]
+        self.instruction_var.set(f"{note}\n{instruction}" if note else instruction)
+        flip = step in ("flip", "flip_back")
+        self.action.config(
+            text=action_text or "Bitte warten ...",
+            state="normal" if action_text else "disabled",
+            bg=FLIP_BG if flip else self.default_bg,
+            activebackground=FLIP_BG if flip else self.default_bg,
+        )
+        self.cancel_button.config(state="normal" if self.active else "disabled")
+        if step not in ("rest1", "rest2"):
+            self.countdown_var.set("")
+
+    def _on_action(self) -> None:
+        if self.step in ("idle", "done"):
+            self._rest("rest1")
+        elif self.step == "flip":
+            self.on_flip(SYNC_FLIP)
+            self._rest("rest2")
+        elif self.step == "flip_back":
+            self.on_flip(SYNC_FLIP_BACK)
+            self._show("done")
+
+    def _rest(self, step: str) -> None:
+        self.deadline = time.monotonic() + SYNC_REST_S
+        self._show(step)
+        self._countdown()
+
+    def _countdown(self) -> None:
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            self.after_id = None
+            self.root.bell()
+            self._show(self.STEPS[self.step][2])
+            return
+        self.countdown_var.set(f"{math.ceil(remaining)} s")
+        self.after_id = self.root.after(100, self._countdown)
+
+    def cancel(self, note: str = "Sync abgebrochen.") -> None:
+        if self.after_id is not None:
+            self.root.after_cancel(self.after_id)
+            self.after_id = None
+        self._show("idle", note)
+
+
 class App:
     def __init__(self, root: tk.Tk, recorder: Recorder, labels: list[Label], csv_path: Path):
         self.root = root
@@ -196,6 +320,9 @@ class App:
             links = "Links: " + ", ".join(str(r) for r in recorder.relationships)
             ttk.Label(root, text=links, padding=(8, 0, 8, 8), wraplength=600).pack(fill="x")
 
+        sync_ok = all(self.session.types.get(l) == "event" for l in SYNC_LABELS)
+        self.sync = SyncPanel(root, root, self.on_press, enabled=sync_ok)
+
         body = ttk.Frame(root, padding=(8, 0))
         body.pack(fill="both", expand=True)
         events = ttk.LabelFrame(body, text="Events", padding=8)
@@ -205,6 +332,8 @@ class App:
         body.columnconfigure((0, 1), weight=1)
 
         for l in labels:
+            if l.label in SYNC_LABELS and sync_ok:
+                continue  # logged through the sync panel
             parent = events if l.type == "event" else activities
             btn = tk.Button(parent, text=l.label, command=lambda n=l.label: self.on_press(n))
             btn.pack(fill="x", pady=2, ipady=6)
@@ -261,6 +390,8 @@ class App:
             return
         self.history.pop()
         self.recorder.undo(press)
+        if press.label in SYNC_LABELS and self.sync.active:
+            self.sync.cancel(f"Sync abgebrochen, weil '{press.label}' rückgängig gemacht wurde. Bitte neu starten.")
         self._refresh()
 
     def on_export(self):
