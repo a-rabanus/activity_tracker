@@ -22,7 +22,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from .generator import Label
-from .naming import SCENARIOS, build_trial_id, is_taken, parse_person
+from .naming import SCENARIOS, build_trial_id, is_taken, parse_person, parse_session
 from .recorder import Press, Recorder
 from .relationships import ACTIONS, Relationship, load_relationships, save_relationships
 from .scenario import SYNC, ScenarioProgress, Step, list_scenarios, load_scenario
@@ -60,12 +60,13 @@ def ask_session_info(
     scenario_dir: Path,
     labels: list[Label],
     person: int | None = None,
+    session: int | None = None,
     scenario: str | None = None,
     default_start: str | None = None,
 ) -> tuple[datetime, str, int, ScenarioProgress] | None:
-    """Modal dialog for person ID, scenario and sensor start time. The trial ID is built from them.
+    """Modal dialog for person ID, session, scenario and sensor start time. The trial ID is built from them.
 
-    The scenario dropdown lists the SCENARIOS that have a scenario_dir/Sxx.csv. Returns
+    The scenario dropdown lists the SCENARIOS that have a scenario_dir/SCxx.csv. Returns
     (reference, trial_id, person, scenario progress), or None if cancelled.
     """
     scenarios = list_scenarios(scenario_dir)
@@ -76,6 +77,7 @@ def ask_session_info(
     frame.pack()
 
     person_var = tk.StringVar(value=f"{person:02d}" if person else "")
+    session_var = tk.StringVar(value=f"{session:02d}" if session else "")
     scenario_var = tk.StringVar(value=scenario if scenario in scenarios else (scenarios or [""])[0])
     start_var = tk.StringVar(value=default_start or datetime.now().strftime("%H:%M:%S"))
     preview_var = tk.StringVar()
@@ -86,25 +88,27 @@ def ask_session_info(
     ttk.Label(frame, text="Personen-ID (1-99)").grid(row=1, column=0, sticky="w")
     person_entry = ttk.Entry(frame, textvariable=person_var, width=22)
     person_entry.grid(row=1, column=1, pady=2)
-    ttk.Label(frame, text="Szenario").grid(row=2, column=0, sticky="w")
+    ttk.Label(frame, text="Session (1-99)").grid(row=2, column=0, sticky="w")
+    ttk.Entry(frame, textvariable=session_var, width=22).grid(row=2, column=1, pady=2)
+    ttk.Label(frame, text="Szenario").grid(row=3, column=0, sticky="w")
     ttk.Combobox(frame, textvariable=scenario_var, values=scenarios, state="readonly", width=20).grid(
-        row=2, column=1, pady=2
+        row=3, column=1, pady=2
     )
-    ttk.Label(frame, text="Sensor-Start (HH:MM:SS)").grid(row=3, column=0, sticky="w")
-    ttk.Entry(frame, textvariable=start_var, width=22).grid(row=3, column=1, pady=2)
+    ttk.Label(frame, text="Sensor-Start (HH:MM:SS)").grid(row=4, column=0, sticky="w")
+    ttk.Entry(frame, textvariable=start_var, width=22).grid(row=4, column=1, pady=2)
     ttk.Label(frame, textvariable=preview_var, font=("TkFixedFont", 12, "bold")).grid(
-        row=4, column=0, columnspan=2, sticky="w", pady=(8, 0)
+        row=5, column=0, columnspan=2, sticky="w", pady=(8, 0)
     )
     ttk.Label(frame, text="Muss genau der Trial-ID des Sensor-Skripts entsprechen.", foreground="gray").grid(
-        row=5, column=0, columnspan=2, sticky="w"
+        row=6, column=0, columnspan=2, sticky="w"
     )
     ttk.Label(frame, textvariable=error_var, foreground="red", wraplength=420).grid(
-        row=6, column=0, columnspan=2, sticky="w"
+        row=7, column=0, columnspan=2, sticky="w"
     )
 
     def current() -> tuple[str, int]:
         p = parse_person(person_var.get())
-        return build_trial_id(day, p, scenario_var.get()), p
+        return build_trial_id(day, p, parse_session(session_var.get()), scenario_var.get()), p
 
     def update_preview(*_):
         try:
@@ -117,7 +121,7 @@ def ask_session_info(
 
     def ok(*_):
         if not scenarios:
-            error_var.set(f"Keine Szenarien gefunden: {scenario_dir}/Sxx.csv für {', '.join(SCENARIOS)} anlegen.")
+            error_var.set(f"Keine Szenarien gefunden: {scenario_dir}/SCxx.csv für {', '.join(SCENARIOS)} anlegen.")
             return
         try:
             trial_id, p = current()
@@ -130,17 +134,17 @@ def ask_session_info(
         if is_taken(out_dir, trial_id):
             error_var.set(
                 f"{trial_id} existiert bereits in {out_dir} und wird nicht überschrieben "
-                "(pro Tag, Person und Szenario genau eine Aufnahme). Eingaben prüfen oder abbrechen."
+                "(pro Tag, Person, Session und Szenario genau eine Aufnahme). Eingaben prüfen oder abbrechen."
             )
             return
         result.append((reference, trial_id, p, ScenarioProgress(name, steps)))
         dialog.destroy()
 
-    for var in (person_var, scenario_var):
+    for var in (person_var, session_var, scenario_var):
         var.trace_add("write", update_preview)
 
     buttons = ttk.Frame(frame)
-    buttons.grid(row=7, column=0, columnspan=2, pady=(8, 0))
+    buttons.grid(row=8, column=0, columnspan=2, pady=(8, 0))
     ttk.Button(buttons, text="Start", command=ok).pack(side="left", padx=4)
     ttk.Button(buttons, text="Abbrechen", command=dialog.destroy).pack(side="left", padx=4)
     dialog.bind("<Return>", ok)

@@ -1,4 +1,4 @@
-"""Scenarios: ordered steps (scenarios/Sxx.csv with step,label,hint) the operator is guided through."""
+"""Scenarios: ordered steps (scenarios/SCxx.csv with step,label,hint) the operator is guided through."""
 
 import csv
 from dataclasses import dataclass
@@ -22,7 +22,7 @@ class Step:
 
 
 def list_scenarios(scenario_dir: Path) -> list[str]:
-    """The SCENARIOS that have a step file `scenario_dir/Sxx.csv`."""
+    """The SCENARIOS that have a step file `scenario_dir/SCxx.csv`."""
     return [s for s in SCENARIOS if (Path(scenario_dir) / f"{s}.csv").is_file()]
 
 
