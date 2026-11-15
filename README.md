@@ -52,10 +52,10 @@ button of the current step is green (`>>> label <<<`).
 
 - A step is done when its event is clicked, when its activity is stopped (also by a linked event), or for
   `sync` when the sync sequence is finished. The next step is then shown automatically.
-- *Schritt überspringen* moves on and records the skip in the log and in the `skipped_steps` table of the
-  `.sqlite` (not in the CSV). *Schritt zurück* goes back one step and removes the skip mark of that step.
+- *überspringen >* moves on and records the skip in the log and in the `skipped_steps` table of the
+  `.sqlite` (not in the CSV). *< zurück* goes back one step and removes the skip mark of that step.
 - All buttons stay clickable. Clicking a label the current step doesn't expect is logged as usual and shows a
-  short red notice.
+  short red notice in the "Als Nächstes" line.
 - *Undo last* on the press that completed a step also moves the scenario back to that step.
 
 ## Sync procedure
@@ -69,7 +69,7 @@ Do this at the start and at the end of every recording. The panel at the top of 
 4. Take the sensors out and keep them moving.
 
 - The flips are only logged by your click, so the timestamp is the moment of the flip.
-- *Sync abbrechen* stops the sequence. Flips already logged stay in the log (remove them with *Undo last*).
+- *Abbrechen* stops the sequence. Flips already logged stay in the log (remove them with *Undo last*).
   Undoing a sync flip while the sequence is running also stops the sequence.
 - `sync_flip` and `sync_flip_back` must be `event`s in `generators.csv`. They get no extra buttons.
 - The rest time is `SYNC_REST_S` in `activity_timestamps/app.py`.

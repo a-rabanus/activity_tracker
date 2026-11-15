@@ -6,10 +6,10 @@ step,label,hint
 5,stand_up,
 6,walking,
 7,open_door,
-8,stairs_up,
-9,stairs_down,
-10,stairs_up,
-11,stairs_down,
+8,stairs_down,
+9,stairs_up,
+10,stairs_down,
+11,stairs_up,
 12,wash_hands,ca. 30 s
 13,walking,
 14,jumping_jacks,ca. 30 s
