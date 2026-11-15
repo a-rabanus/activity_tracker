@@ -15,36 +15,47 @@ A small tkinter tool for labelling human-activity recordings while the subject w
 
 ```bash
 uv run --python 3.14 python -m activity_timestamps                    # asks for links, then the start dialog
-uv run --python 3.14 python -m activity_timestamps --start 12:55 \
-    --trial 20261113_P01_EVT-scenario01_T01                           # skips the start dialog
+uv run --python 3.14 python -m activity_timestamps --start 11:27:49     --trial 20261115_P03_S01                                          # skips the start dialog
+python -m unittest discover -s tests                                  # tests for the trial ID
 ```
 
 You need a Python with tkinter. uv-managed Pythons include it. For the system Python, install `python3-tk`.
 
 ## Start dialog
 
-The dialog asks for the **person ID** (1-99), the **scenario** (dropdown), the **trial number** (1-99) and the
-**sensor start time**. The date is today's date. The resulting trial ID is shown live before you press *Start*.
-Invalid input shows a message in red and the dialog stays open. The person ID (e.g. `P01`) is stored as `subject`.
+The sensor script prints the two values to enter here:
+
+```
+Sensor-Start: 11:27:49        ->  field "Sensor-Start (HH:MM:SS)"
+Trial-ID: 20261115_P03_S01    ->  person ID + scenario, the tracker builds the same ID
+```
+
+The dialog asks for the **person ID** (`3`, `03` or `P03`), the **scenario** (dropdown) and the **sensor start
+time**. The date is today's date. The trial ID is shown live; check that it is exactly the one from the sensor
+script. Invalid input shows a message in red and the dialog stays open. The person ID (e.g. `P03`) is stored as
+`subject`.
 
 `--trial <Trial-ID>` prefills the dialog (an invalid ID stops with an error message). If `--start` is given
-as well and the trial ID is not used yet, the dialog is skipped.
+as well, the dialog is skipped.
 
 ## Trial ID and file names
 
-`YYYYMMDD_Pxx_EVT-scenarioXX_Txx`, e.g. `20261113_P01_EVT-scenario01_T01`
+`YYYYMMDD_Pxx_Sxx`, e.g. `20261115_P03_S01`. It must be identical to the sensor recording.
 
-- `YYYYMMDD` date, `Pxx` person ID, `EVT` fixed, `scenarioXX` one of the files in `scenarios/`,
-  `Txx` trial number.
-- Files: `data/<Trial-ID>_labels.csv` and `data/<Trial-ID>_labels.sqlite`.
-- Existing files are never overwritten. If the trial ID is already used, the next free trial number is filled
-  in and you confirm with *Start* again.
+- `YYYYMMDD` date of the recording, `Pxx` person ID `P01`-`P99`, `Sxx` scenario from `SCENARIOS` in
+  `activity_timestamps/naming.py` (`["S01", "S02"]`, must stay identical to the sensor repo).
+- All IDs are made and checked in `naming.py` (`build_trial_id`, `parse_trial_id`).
+- Files: `data/<Trial-ID>_labels.csv` and `data/<Trial-ID>_labels.sqlite`
+  (sensor files: `<Trial-ID>_<position>_<acc|gyro>.csv`).
+- There is exactly one recording per day, person and scenario. If files for the trial ID already exist,
+  nothing is overwritten: the dialog shows a message and does not start, `--trial` stops with an error.
 
 ## Scenarios
 
-`scenarios/scenarioXX.csv` (`step,label,hint`) lists the steps of a scenario in order. `label` is a label from
+`scenarios/Sxx.csv` (`step,label,hint`) lists the steps of a scenario in order. `label` is a label from
 `generators.csv` or `sync` (the guided sync sequence below), `hint` is a short text such as `ca. 30 s`.
-To add a scenario, just add a new `scenarioXX.csv` there. The start dialog lists the folder (or `--scenarios DIR`).
+To add a scenario, add it to `SCENARIOS` (and in the sensor repo) and add `scenarios/Sxx.csv`. The dropdown
+lists the scenarios that have a file (folder: `scenarios/` or `--scenarios DIR`).
 A file that names an unknown label is rejected in the dialog with the line number.
 
 During the recording the scenario panel shows `Schritt X/Y: <label> – <hint>` and `Als Nächstes: ...`, and the
