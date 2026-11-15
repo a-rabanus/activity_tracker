@@ -1,0 +1,27 @@
+step,label,hint
+1,sync,
+2,walking,
+3,sit_down,
+4,drinking,im Sitzen
+5,stand_up,
+6,walking,
+7,open_door,
+8,stairs_down,
+9,stairs_up,
+10,stairs_down,
+11,stairs_up,
+12,wash_hands,ca. 30 s
+13,walking,
+14,jumping_jacks,ca. 30 s
+15,squats,ca. 30 s
+16,throw_ball,
+17,catch_ball,
+18,throw_ball,
+19,catch_ball,
+20,running,ca. 30 s
+21,walking,
+22,shaking_hands,
+23,sit_down,
+24,drinking,im Sitzen
+25,stand_up,
+26,sync,
