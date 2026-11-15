@@ -1,11 +1,11 @@
-"""Scenarios: ordered steps (scenarios/<name>.csv with step,label,hint) the operator is guided through."""
+"""Scenarios: ordered steps (scenarios/Sxx.csv with step,label,hint) the operator is guided through."""
 
 import csv
 from dataclasses import dataclass
 from pathlib import Path
 
 from .generator import Label
-from .naming import SCENARIO_RE
+from .naming import SCENARIOS
 
 SYNC = "sync"  # step label for the guided sync sequence
 COLUMNS = ["step", "label", "hint"]
@@ -22,8 +22,8 @@ class Step:
 
 
 def list_scenarios(scenario_dir: Path) -> list[str]:
-    """Names of the scenario files in `scenario_dir` (scenarioXX.csv), sorted."""
-    return sorted(p.stem for p in Path(scenario_dir).glob("*.csv") if SCENARIO_RE.fullmatch(p.stem))
+    """The SCENARIOS that have a step file `scenario_dir/Sxx.csv`."""
+    return [s for s in SCENARIOS if (Path(scenario_dir) / f"{s}.csv").is_file()]
 
 
 def load_scenario(path: Path, labels: list[Label]) -> list[Step]:

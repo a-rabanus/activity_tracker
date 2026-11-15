@@ -1,4 +1,4 @@
-"""Entry point: python -m activity_timestamps [--start 12:55] [--trial 20261113_P01_EVT-scenario01_T01]"""
+"""Entry point: python -m activity_timestamps [--start 12:55] [--trial 20261115_P03_S01]"""
 
 import argparse
 import tkinter as tk
@@ -9,7 +9,7 @@ from tkinter import messagebox
 
 from .app import App, ask_session_info, choose_relationships
 from .generator import load_generator
-from .naming import is_taken, output_paths, parse_trial_id, subject_id
+from .naming import build_trial_id, is_taken, output_paths, parse_trial_id, subject_id
 from .recorder import Recorder
 from .scenario import ScenarioProgress, list_scenarios, load_scenario
 from .storage import Session, parse_reference
@@ -20,8 +20,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--generator", type=Path, default=Path("generators.csv"), help="label,type csv")
     parser.add_argument("--relationships", type=Path, help="event,action,activity csv (default: next to generator)")
     parser.add_argument("--start", help="sensor recording start, HH:MM[:SS] or ISO datetime")
-    parser.add_argument("--trial", help="trial ID YYYYMMDD_Pxx_EVT-scenarioXX_Txx, e.g. 20261113_P01_EVT-scenario01_T01")
-    parser.add_argument("--scenarios", type=Path, help="folder with scenarioXX.csv files (default: next to generator)")
+    parser.add_argument("--trial", help="trial ID YYYYMMDD_Pxx_Sxx as printed by the sensor script, e.g. 20261115_P03_S01")
+    parser.add_argument("--scenarios", type=Path, help="folder with Sxx.csv step files (default: next to generator)")
     parser.add_argument("--out-dir", type=Path, default=Path("data"))
     args = parser.parse_args(argv)
 
@@ -33,12 +33,17 @@ def main(argv: list[str] | None = None) -> None:
             reference = parse_reference(args.start, date.today())
         except ValueError as e:
             parser.error(str(e))
-    day, person, scenario, trial = date.today(), None, None, None
+    day, person, scenario = date.today(), None, None
     if args.trial:
         try:
-            day, person, scenario, trial = parse_trial_id(args.trial)
+            day, person, scenario = parse_trial_id(args.trial)
         except ValueError as e:
             parser.error(str(e))
+        if is_taken(args.out_dir, build_trial_id(day, person, scenario)):
+            parser.error(
+                f"{build_trial_id(day, person, scenario)} existiert bereits in {args.out_dir} und wird nicht "
+                "überschrieben (pro Tag, Person und Szenario genau eine Aufnahme)"
+            )
         if scenario not in list_scenarios(scenario_dir):
             parser.error(f"Szenario {scenario!r} aus --trial gibt es nicht: {scenario_dir / scenario}.csv fehlt")
 
@@ -50,8 +55,8 @@ def main(argv: list[str] | None = None) -> None:
     if relationships is None:
         root.destroy()
         return
-    if reference and args.trial and not is_taken(args.out_dir, args.trial):
-        trial_id = args.trial
+    if reference and args.trial:
+        trial_id = build_trial_id(day, person, scenario)
         try:
             progress = ScenarioProgress(scenario, load_scenario(scenario_dir / f"{scenario}.csv", labels))
         except (ValueError, OSError) as e:
@@ -60,7 +65,7 @@ def main(argv: list[str] | None = None) -> None:
             return
     else:
         info = ask_session_info(
-            root, args.out_dir, day, scenario_dir, labels, person, scenario, trial, args.start
+            root, args.out_dir, day, scenario_dir, labels, person, scenario, args.start
         )
         if info is None:
             root.destroy()

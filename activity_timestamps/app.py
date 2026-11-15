@@ -22,7 +22,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from .generator import Label
-from .naming import build_trial_id, is_taken, next_free_trial, parse_number
+from .naming import SCENARIOS, build_trial_id, is_taken, parse_person
 from .recorder import Press, Recorder
 from .relationships import ACTIONS, Relationship, load_relationships, save_relationships
 from .scenario import SYNC, ScenarioProgress, Step, list_scenarios, load_scenario
@@ -61,12 +61,11 @@ def ask_session_info(
     labels: list[Label],
     person: int | None = None,
     scenario: str | None = None,
-    trial: int | None = None,
     default_start: str | None = None,
 ) -> tuple[datetime, str, int, ScenarioProgress] | None:
-    """Modal dialog for person ID, scenario, trial number and sensor start time.
+    """Modal dialog for person ID, scenario and sensor start time. The trial ID is built from them.
 
-    The scenario dropdown lists scenario_dir/scenarioXX.csv. Returns
+    The scenario dropdown lists the SCENARIOS that have a scenario_dir/Sxx.csv. Returns
     (reference, trial_id, person, scenario progress), or None if cancelled.
     """
     scenarios = list_scenarios(scenario_dir)
@@ -78,11 +77,10 @@ def ask_session_info(
 
     person_var = tk.StringVar(value=f"{person:02d}" if person else "")
     scenario_var = tk.StringVar(value=scenario if scenario in scenarios else (scenarios or [""])[0])
-    trial_var = tk.StringVar(value=f"{trial:02d}" if trial else "01")
     start_var = tk.StringVar(value=default_start or datetime.now().strftime("%H:%M:%S"))
     preview_var = tk.StringVar()
     error_var = tk.StringVar()
-    result: list[tuple[datetime, str, int]] = []
+    result: list[tuple[datetime, str, int, ScenarioProgress]] = []
 
     ttk.Label(frame, text=f"Datum: {day:%Y%m%d} (automatisch)").grid(row=0, column=0, columnspan=2, sticky="w")
     ttk.Label(frame, text="Personen-ID (1-99)").grid(row=1, column=0, sticky="w")
@@ -92,64 +90,53 @@ def ask_session_info(
     ttk.Combobox(frame, textvariable=scenario_var, values=scenarios, state="readonly", width=20).grid(
         row=2, column=1, pady=2
     )
-    ttk.Label(frame, text="Trial-Nummer (1-99)").grid(row=3, column=0, sticky="w")
-    ttk.Entry(frame, textvariable=trial_var, width=22).grid(row=3, column=1, pady=2)
-    ttk.Label(frame, text="Sensor-Start (HH:MM[:SS])").grid(row=4, column=0, sticky="w")
-    ttk.Entry(frame, textvariable=start_var, width=22).grid(row=4, column=1, pady=2)
+    ttk.Label(frame, text="Sensor-Start (HH:MM:SS)").grid(row=3, column=0, sticky="w")
+    ttk.Entry(frame, textvariable=start_var, width=22).grid(row=3, column=1, pady=2)
     ttk.Label(frame, textvariable=preview_var, font=("TkFixedFont", 12, "bold")).grid(
-        row=5, column=0, columnspan=2, sticky="w", pady=(8, 0)
+        row=4, column=0, columnspan=2, sticky="w", pady=(8, 0)
+    )
+    ttk.Label(frame, text="Muss genau der Trial-ID des Sensor-Skripts entsprechen.", foreground="gray").grid(
+        row=5, column=0, columnspan=2, sticky="w"
     )
     ttk.Label(frame, textvariable=error_var, foreground="red", wraplength=420).grid(
         row=6, column=0, columnspan=2, sticky="w"
     )
 
-    def current() -> tuple[str, int, int]:
-        p = parse_number(person_var.get(), "P", "Personen-ID")
-        t = parse_number(trial_var.get(), "T", "Trial-Nummer")
-        return build_trial_id(day, p, scenario_var.get(), t), p, t
+    def current() -> tuple[str, int]:
+        p = parse_person(person_var.get())
+        return build_trial_id(day, p, scenario_var.get()), p
 
     def update_preview(*_):
         try:
-            trial_id, _, _ = current()
+            trial_id, _ = current()
         except ValueError:
             preview_var.set("Trial-ID: -")
             return
         taken = "  (existiert bereits)" if is_taken(out_dir, trial_id) else ""
         preview_var.set(f"Trial-ID: {trial_id}{taken}")
 
-    def check_free(trial_id: str, p: int, t: int) -> bool:
-        """If the files exist, suggest the next free trial number. True if the ID is free."""
-        if not is_taken(out_dir, trial_id):
-            return True
-        suggestion = next_free_trial(out_dir, day, p, scenario_var.get(), after=t)
-        if suggestion is None:
-            error_var.set(f"{trial_id} existiert bereits und es gibt keine freie Trial-Nummer mehr.")
-        else:
-            trial_var.set(f"{suggestion:02d}")
-            error_var.set(
-                f"{trial_id} existiert bereits in {out_dir}. Nächste freie Trial-Nummer T{suggestion:02d} "
-                "wurde eingetragen. Bitte prüfen und erneut 'Start' klicken."
-            )
-        return False
-
     def ok(*_):
         if not scenarios:
-            error_var.set(f"Keine Szenarien gefunden: {scenario_dir}/scenarioXX.csv anlegen.")
+            error_var.set(f"Keine Szenarien gefunden: {scenario_dir}/Sxx.csv für {', '.join(SCENARIOS)} anlegen.")
             return
         try:
-            trial_id, p, t = current()
+            trial_id, p = current()
             reference = parse_reference(start_var.get(), date.today())
             name = scenario_var.get()
             steps = load_scenario(scenario_dir / f"{name}.csv", labels)
         except (ValueError, OSError) as e:
             error_var.set(str(e))
             return
-        if not check_free(trial_id, p, t):
+        if is_taken(out_dir, trial_id):
+            error_var.set(
+                f"{trial_id} existiert bereits in {out_dir} und wird nicht überschrieben "
+                "(pro Tag, Person und Szenario genau eine Aufnahme). Eingaben prüfen oder abbrechen."
+            )
             return
         result.append((reference, trial_id, p, ScenarioProgress(name, steps)))
         dialog.destroy()
 
-    for var in (person_var, scenario_var, trial_var):
+    for var in (person_var, scenario_var):
         var.trace_add("write", update_preview)
 
     buttons = ttk.Frame(frame)
@@ -160,10 +147,6 @@ def ask_session_info(
     dialog.bind("<Escape>", lambda _: dialog.destroy())
 
     update_preview()
-    try:
-        check_free(*current())  # warn straight away if the prefilled ID (e.g. from --trial) is taken
-    except ValueError:
-        pass
     person_entry.focus_set()
     _run_modal(root, dialog)
     return result[0] if result else None
